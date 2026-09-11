@@ -1,0 +1,15 @@
+checkpoint: models/base/silma-tts-v1-ac81834c/model.pt
+use_ema: true
+vocab: models/base/silma-tts-v1-ac81834c/vocab.txt
+vocos_dir: models/base/vocos-mel-24khz-0feb3fdd
+reference_audio: data/processed/audio/validation/00064a88e1e98e3b8109aff9364e0dc06876c88e9e9d18a38b02828e49c5f6b0.wav
+reference_text: "وبعدين راح نضيف ا باقي المكونات عندي عندي حبة بصل رح نفرمها مو شرط تكون فرمة ناعمة مرة حتى فرمة خشنة عادي"
+phrases: configs/saudi_eval_phrases.jsonl
+output_dir: outputs/evaluation
+device_preference: mps_then_cpu
+seed: 20260911
+nfe_steps: 32
+cfg_strength: 2.0
+sway_sampling_coefficient: -1.0
+speed: 1.0
+cross_fade_seconds: 0.15
