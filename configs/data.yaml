@@ -1,0 +1,51 @@
+# Auditable preprocessing contract for pinned SADA22 mirror revision
+# 094fe2c0fe4b549a4f34349e6e0622e7c7273c2d. Raw inputs are immutable.
+dataset:
+  source: SADA22 / MohamedRashad/SADA22
+  raw_root: data/raw
+  interim_root: data/interim
+  processed_root: data/processed
+  splits_root: data/splits
+  manifest: data/processed/manifest.jsonl
+  target_sample_rate: 24000
+  channels: 1
+  split_seed: 20260911
+  # Retain every kept row's official split; on cross-split text collisions,
+  # protect held-out test first, then validation, then training.
+  split_collision_priority: [test, validation, train]
+  ledger_name: sada_preprocessing_gate_b_token_cleanup_ledger.jsonl
+  # The mirror's official assignment is retained. These proportions are for a
+  # future source that has stable real speaker IDs.
+  split_proportions:
+    train: 0.95
+    validation: 0.025
+    test: 0.025
+  allowed_dialects: [Najdi, Hijazi, Khaliji]
+  allowed_genders: [Female, Male]
+  quality:
+    min_duration_seconds: 1.0
+    max_duration_seconds: 20.0
+    min_rms: 0.0005
+    max_clip_fraction: 0.02
+  text_policy:
+    input_field: text
+    retain_raw_text: true
+    transforms: [unicode_nfc, whitespace_collapsed]
+    prohibited_transforms: [letter_folding, diacritic_removal, spelling_correction, vocabulary_replacement, asr_retranscription]
+    reject_hash_prefixed_annotation_or_uncertainty_markup: true
+    reject_standalone_uncertainty_tokens: [غير واضح, غير مفهوم, غير_واضح, غير-واضح]
+    reject_embedded_machine_uncertainty_tokens: [غير_واضح, غير-واضح, غير_مفهوم, غير-مفهوم]
+    raw_cleaned_comparison:
+      safe_mechanical: [unicode_nfc_only, whitespace_only, punctuation_or_spacing_only]
+      review_required: [content_or_diacritic_difference]
+    collision_key:
+      purpose: cross_split_collision_prevention_only
+      transforms: [unicode_nfc, remove_spacing, remove_unicode_punctuation, remove_arabic_combining_diacritics]
+      never_used_as_training_text: true
+  unavailable_identity_sentinels:
+    speaker_id: __speaker_id_unavailable__
+    source_id: __source_id_unavailable__
+metadata_required:
+  - audio_path
+  - text
+  - speaker_id
