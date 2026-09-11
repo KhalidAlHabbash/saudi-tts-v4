@@ -1,0 +1,122 @@
+# RunPod RTX 4090 continuation profile. It keeps the Mac run's effective batch
+# size (8 samples/update) and optimizer schedule unchanged.
+upstream:
+  f5_tts_version: "1.1.7"
+  f5_tts_revision: "c96c3aeed84f5e02aa54dc42c1193537ead39837"
+  silma_repo: silma-ai/silma-tts
+  silma_revision: "ac81834c5ce305504fe4c7602187042fdd6913db"
+  silma_dir: models/base/silma-tts-v1-ac81834c
+  checkpoint: models/base/silma-tts-v1-ac81834c/model.pt
+  model_config: models/base/silma-tts-v1-ac81834c/config.yaml
+  vocab: models/base/silma-tts-v1-ac81834c/vocab.txt
+  pretrained_weights: ema
+  vocos_repo: charactr/vocos-mel-24khz
+  vocos_revision: "0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21"
+  vocos_dir: models/base/vocos-mel-24khz-0feb3fdd
+
+data:
+  train_manifest: data/splits/train.jsonl
+  validation_manifest: data/splits/validation.jsonl
+  test_manifest: data/splits/test.jsonl
+  min_duration_seconds: 1.0
+  max_duration_seconds: 8.0
+  max_text_characters: 600
+  strict_vocabulary: true
+  # Two full-length clips or the equivalent duration per microbatch fits 24 GB.
+  frames_per_batch: 1500
+  max_samples_per_batch: 2
+  num_workers: 4
+  prefetch_factor: 2
+  expected_eligible_rows: 104176
+  expected_microbatches_per_epoch: 52088
+  expected_optimizer_updates_per_epoch: 13022
+
+model:
+  name: SilmaTTS_V1_Small
+  backbone: DiT
+  architecture:
+    dim: 768
+    depth: 18
+    heads: 12
+    ff_mult: 2
+    text_dim: 512
+    text_mask_padding: true
+    conv_layers: 4
+    pe_attn_head: null
+    attn_backend: torch
+    attn_mask_enabled: false
+    checkpoint_activations: true
+  mel:
+    target_sample_rate: 24000
+    n_mel_channels: 100
+    hop_length: 256
+    win_length: 1024
+    n_fft: 1024
+    mel_spec_type: vocos
+
+optimization:
+  seed: 20260911
+  epochs: 25
+  max_updates: 120000
+  # Stage stops are operational gates; the scheduler always retains its 120k horizon.
+  stage_targets: [13122, 26144, 52188, 104276, 120000]
+  stage_stop_update: 13122
+  learning_rate: 0.00001
+  weight_decay: 0.01
+  warmup_updates: 2000
+  gradient_accumulation_steps: 4
+  max_grad_norm: 1.0
+  mixed_precision: bf16
+  freeze: none
+
+benchmark:
+  # These are diagnostic stops, not formal stages. Starting from update 100,
+  # they measure exactly 100 or 200 production-order CUDA optimizer updates.
+  source_update: 100
+  allowed_stop_updates: [200, 300]
+
+validation:
+  every_updates: 250
+  max_batches: 16
+  seed: 20260912
+
+checkpointing:
+  output_dir: checkpoints/silma-saudi
+  # Full checkpoints are ~2.4 GB. Keep a frequently rotated resume checkpoint
+  # and less-frequent immutable milestones for durable RunPod storage sync.
+  save_every_updates: 5000
+  save_last_every_updates: 500
+  keep_last_n: 3
+  resume: auto
+  # This exception is consumed only by the existing update-100/epoch-0 Mac
+  # checkpoint, which predates sampler fingerprints. Every new checkpoint has a
+  # RunPod sampler fingerprint and must match it exactly on subsequent resumes.
+  legacy_mac_to_cuda_migration:
+    enabled: true
+    allowed_update: 100
+    allowed_epoch: 0
+    allowed_next_batch: 800
+    reset_next_batch: true
+  durable_upload:
+    enabled: true
+    fail_closed: true
+    lock_path: /workspace/.saudi-tts-durable-storage.lock
+
+logging:
+  log_every_updates: 10
+  jsonl: runs/silma-saudi/metrics.jsonl
+
+runtime:
+  device_preference: cuda_then_mps_then_cpu
+  allow_cpu_fallback: false
+  fp32: false
+  pin_memory: true
+  deterministic: false
+  allow_tf32: true
+  minimum_free_disk_gib: 20
+
+smoke:
+  manifest_rows: 8
+  one_step_max_duration_seconds: 2.0
+  output_dir: checkpoints/runpod-smoke
+  metric_jsonl: runs/runpod-smoke/metrics.jsonl
