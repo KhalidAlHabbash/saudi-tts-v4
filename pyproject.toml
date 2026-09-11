@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saudi-tts-finetune"
+version = "0.1.0"
+description = "Auditable local fine-tuning wrapper for pinned SILMA/F5-TTS."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "accelerate==1.10.1",
+  "ema-pytorch==0.8.3",
+  "f5-tts==1.1.7",
+  "huggingface-hub==1.31.0",
+  "librosa==0.11.0",
+  "pandas==2.3.2",
+  "PyYAML==6.0.2",
+  "soundfile==0.13.1",
+  "torch==2.8.0",
+  "torchaudio==2.8.0",
+  "tqdm==4.67.1",
+  "vocos==0.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

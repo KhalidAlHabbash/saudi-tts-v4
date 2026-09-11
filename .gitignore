@@ -1,0 +1,54 @@
+# Python environments and build output
+.venv/
+.venv-runpod/
+venv/
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Local configuration and editor state
+.env
+.env.local
+.DS_Store
+.idea/
+.vscode/
+
+# Data and derived artifacts: raw material and model outputs never enter Git.
+data/raw/**
+data/processed/**
+data/interim/**
+data/splits/**
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/interim/.gitkeep
+!data/splits/.gitkeep
+artifacts/
+checkpoints/
+outputs/
+runs/
+wandb/
+mlruns/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.wav
+*.flac
+*.mp3
+
+# Large downloaded upstream assets
+models/
+!models/
+models/**
+!models/base/
+models/base/**
+!models/base/asset_manifest.json
+third_party/
+.cache/

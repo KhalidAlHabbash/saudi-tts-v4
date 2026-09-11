@@ -1,0 +1,17 @@
+# Direct dependencies are deliberately pinned. Resolve and record transitive wheels
+# in the local environment before a reproducibility-sensitive training run.
+accelerate==1.10.1
+ema-pytorch==0.8.3
+f5-tts==1.1.7
+huggingface-hub==1.31.0
+librosa==0.11.0
+pandas==2.3.2
+PyYAML==6.0.2
+soundfile==0.13.1
+torch==2.8.0
+torchaudio==2.8.0
+tqdm==4.67.1
+vocos==0.1.0
+
+# Development validation
+pytest==8.4.2
