@@ -1,6 +1,6 @@
 # Saudi Arabic TTS fine-tuning (private research pilot)
 
-This repository is an auditable wrapper for adapting SILMA TTS v1 / F5-TTS to Saudi-labelled Arabic speech. The Mac run was stopped after its full update-100 checkpoint; the current phase is guarded migration and benchmarking on one RunPod Community RTX 4090 24 GB.
+This repository is an auditable wrapper for adapting SILMA TTS v1 / F5-TTS to Saudi-labelled Arabic speech. The Mac run was stopped after its full update-100 checkpoint; the current phase is guarded migration and benchmarking on one RunPod Secure RTX PRO 4500 Blackwell with 32 GB VRAM.
 
 ## Scope and selected assets
 
@@ -72,7 +72,7 @@ It uses `configs/train.yaml`: FP32, batch size 1, gradient accumulation 8, zero 
 
 For RunPod, use the official Python 3.12/Torch 2.8 template and the separate
 CUDA/BF16 profile in [docs/runpod.md](docs/runpod.md): batch 2, accumulation 4,
-activation checkpointing, TF32, four workers, pinned memory, a 75 GB Pod working
+activation checkpointing, TF32, four workers, pinned memory, a 70 GB Pod working
 volume, and a separate 100 GB STANDARD network volume accessed through RunPod
 S3. The detached launcher is `./scripts/launch_runpod_training.sh`; ongoing
 durability is RunPod-only, with no Mac backup workflow. The mandatory order is

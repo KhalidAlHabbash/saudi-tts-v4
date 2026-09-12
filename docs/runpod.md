@@ -1,15 +1,16 @@
-# RunPod Community RTX 4090 runbook
+# RunPod Secure RTX PRO 4500 runbook
 
-This runbook continues the full FP32 Mac update-100 state on one Community RTX
-4090 24 GB. It does not authorize provisioning by an agent, uploading without
-the user, or starting training. The target is the official `runpod-torch-v280`
+This runbook continues the full FP32 Mac update-100 state on the provisioned
+Secure RTX PRO 4500 Blackwell with 32 GB VRAM. Provisioning and the initial
+integrity-checked upload are complete; this document does not authorize starting
+production training. The target is the official `runpod-torch-v280`
 template (`runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404`): Python 3.12,
 Torch 2.8, and CUDA 12.8.
 
 ## Frozen resource and storage design
 
-- One Community RTX 4090 24 GB; no distributed training.
-- 75 GB persistent Pod working volume mounted at `/workspace`.
+- Pod `saudi-tts-rtxpro4500` (`dgutezp5s8rnov`) in `EU-RO-1`: one Secure RTX PRO 4500 Blackwell with 32 GB VRAM at $0.72/hour; no distributed training.
+- 70 GB persistent Pod working volume mounted at `/workspace`.
 - A separate 100 GB STANDARD RunPod network volume in the same datacenter,
   accessed from the Pod through RunPod's S3-compatible API. Do not attach it at
   `/workspace`, because that would replace the Pod working-volume mount.
@@ -22,7 +23,7 @@ Torch 2.8, and CUDA 12.8.
 The working payload is approximately 30.1 GiB. `model_last`, three numbered
 checkpoints, and one temporary save need about another 12.1 GiB. The trainer
 requires at least 20 GiB free before starting and before every checkpoint save,
-so a 75 GB working volume has a usable but monitored margin.
+so the 70 GB working volume has a usable but monitored margin.
 
 ## 1. Verify and transfer the immutable source state
 
@@ -81,14 +82,24 @@ bash -n scripts/*.sh
 ```
 
 Setup creates `.venv-runpod` with `--system-site-packages`; it must reuse the
-template's CUDA Torch rather than installing a second Torch wheel. It rejects
-the wrong Python/Torch/CUDA versions, unavailable CUDA, or missing BF16 support,
-runs `pip check`, and writes:
+template's CUDA Torch rather than installing a second Torch wheel. Each run
+clears only that project venv so an interrupted install cannot leave a partial
+environment. F5-TTS is installed from its pinned wheel with dependency
+resolution disabled; a version-guarded patch makes its unused upstream
+Trainer/Hugging Face dataset/ASR/plotting imports lazy. The pinned runtime
+therefore excludes bitsandbytes, flash-attn, Transformers, Datasets, Gradio,
+W&B, Accelerate, and other UI/training stacks not used by this project. Setup
+rejects the wrong Python/Torch/CUDA versions, unavailable CUDA, missing BF16
+support, forbidden packages, unexpected `pip check` failures, or failed
+production imports. The same version guard trims only those upstream metadata
+requirements made unavailable by this runtime patch, so ordinary `pip check`
+must exit cleanly. It writes:
 
+- `reports/runpod_dependency_diagnostic.json`
 - `reports/runpod_environment_diagnostic.json`
 - `reports/runpod_environment_freeze.txt`
 
-Live Linux validation of those artifacts remains pending until the Pod exists.
+Live Linux validation of those artifacts remains pending until setup completes.
 
 ## 3. Run the isolated production-shaped resume probes
 
@@ -164,29 +175,102 @@ durable upload and restore.
 
 ## 5. Establish RunPod-only durable storage
 
-Generate the S3 API key in the RunPod Console. Credentials exist only in the Pod
-shell environment; `AWS_ACCESS_KEY_ID` is the RunPod `user_...` id and
-`AWS_SECRET_ACCESS_KEY` is the `rps_...` S3 key. The datacenter value is passed
-as-is to `--region`; the endpoint hostname is lowercased by the scripts.
+Install the official AWS CLI v2 under the persistent working volume. The fixed
+binary location prevents a Pod restart from removing it and is checked before
+any live launch, upload, sync, or restore:
 
 ```bash
-export RUNPOD_NETWORK_VOLUME_ID='<100GB-network-volume-id>'
-export RUNPOD_S3_DATACENTER='<DATACENTER-ID>'
-export AWS_ACCESS_KEY_ID='user_...'
-export AWS_SECRET_ACCESS_KEY='rps_...'
+installer_dir="$(mktemp -d)"
+cd "$installer_dir"
+curl -fsSLo awscliv2.zip https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+unzip -q awscliv2.zip
+./aws/install --install-dir /workspace/.local/aws-cli --bin-dir /workspace/.local/bin
+/workspace/.local/bin/aws --version
+cd /workspace/saudi-tts-finetune
+```
+
+Generate the S3 API key in the RunPod Console and store it as the encrypted
+managed secret `saudi-tts-durable`. Configure the Pod environment in Console,
+then restart the Pod so RunPod injects all four values into the process
+environment:
+
+| Pod environment variable | Console value |
+| --- | --- |
+| `RUNPOD_NETWORK_VOLUME_ID` | The 100 GB network-volume ID |
+| `RUNPOD_S3_DATACENTER` | The volume datacenter ID, such as `EU-RO-1` |
+| `AWS_ACCESS_KEY_ID` | The RunPod user ID associated with the S3 key |
+| `AWS_SECRET_ACCESS_KEY` | `{{ RUNPOD_SECRET_saudi-tts-durable }}` |
+
+Never create `/workspace/.saudi-tts/runtime.env` or any other persistent
+plaintext credential file. `/workspace` is MooseFS on this Pod and did not
+honor restrictive file modes: a requested `0600` was observed as `0666`. The
+scripts reject the legacy path if it exists and never source credential files.
+They validate the four injected values in memory, reject an unresolved managed
+secret placeholder without printing it, prepend `/workspace/.local/bin` to
+`PATH`, and require `/workspace/.local/bin/aws` for every live launch, upload,
+sync, or restore. The detached training process inherits the validated values,
+allowing automatic fail-closed durable checkpoints to invoke AWS later.
+
+Then validate the archive plan before the first live transfer:
+
+```bash
 
 ./scripts/sync_runpod_payload.sh --dry-run
 ./scripts/sync_runpod_payload.sh
 ```
 
-The payload sync keeps the repository, processed data, split manifests, and
-base assets on the 100 GB RunPod network volume. It shares a non-blocking lock
-with checkpoint sync so only one durable operation runs at once.
+Explicit `--dry-run` checkpoint/restore calls preserve their previous ability
+to run with test-provided or absent credentials where no S3 request occurs. The
+forbidden plaintext path is rejected even during dry-run. Payload `--dry-run`
+only validates and prints the two archive components; it does not hash the 30
+GiB payload or contact S3.
+
+The live payload command creates two deterministic, uncompressed archives: one
+for `data/processed`, `data/splits`, and `models/base`, and one for the much
+smaller project files. Splitting them avoids re-uploading 30 GiB when only code
+changes. Uncompressed tar is intentional because the audio/model payload is
+already compressed and CPU compression would extend paid Pod time.
+
+Each archive is read once to establish its SHA-256 and exact size, then streamed
+directly into multipart-capable `aws s3 cp -`; it is never staged as a 30 GiB
+file on the 70 GB `/workspace`. The upload stream is hashed and must match the
+first pass. The live uploader uses 128 MB parts, two concurrent requests, and
+15 standard retry attempts. This stays below RunPod's 500 MB maximum part size
+while avoiding the thousands of default 8 MB parts that can fail during
+multipart finalization. RunPod S3 strips user-defined SHA metadata, so successful HeadObject
+size validation is followed by a full remote stream-download whose byte count
+and SHA-256 must both match. No downloaded archive is buffered or written to
+disk. Objects are immutable SHA-addressed names with SHA sidecars, and
+`payload/LATEST.json` is published only after both components verify. This
+reduces 125,538 small-file S3 operations to two archive uploads and shares the
+checkpoint sync lock.
+
+Preserve the original fingerprintless migration seed in its deliberately
+separate integrity-only namespace:
+
+```bash
+./scripts/sync_runpod_legacy_seed.sh \
+  checkpoints/silma-saudi/model_last.pt
+```
+
+That command accepts only update 100, epoch 0, next batch 800, no sampler
+fingerprint, and SHA-256
+`7b54ac7c31462d7c24b76e16ed679a95754cd00f7bdc5ab10d86961fe418e82e`.
+It uploads one multipart checkpoint object, stream-downloads and hashes all
+remote bytes in constant memory, then publishes a SHA sidecar and immutable JSON
+integrity record under `legacy-seeds/update-000000100/`. The record explicitly
+sets `strict_latest_eligible: false`; this path never reads or publishes
+`checkpoints/LATEST.json` and does not relax production resume validation. It
+is a disaster-recovery copy of the one-time migration input, not a strict
+resumable RunPod checkpoint. Only the first production-order CUDA checkpoint
+created by the benchmark may enter strict durable `LATEST.json`.
 
 For checkpoints, the high-level AWS CLI `s3 cp` path is multipart-capable.
-Objects use immutable update/SHA names, carry SHA metadata, and have SHA-256
-sidecars. The script verifies object sizes with HeadObject and checks the remote
-sidecar before publishing `checkpoints/LATEST.json`.
+Objects use immutable update/SHA names and have SHA-256 sidecars. The script
+checks HeadObject size and rejects mismatched SHA metadata when the backend
+returns it. Because RunPod strips that metadata, it always stream-downloads the
+remote checkpoint through AWS CLI and verifies its byte count and SHA-256 in
+constant memory before publishing `checkpoints/LATEST.json`.
 
 In the CUDA production config, durable upload is automatic and synchronous for
 every immutable 5,000-update checkpoint and every formal stage checkpoint.
@@ -246,8 +330,14 @@ aws s3api abort-multipart-upload \
   --endpoint-url "https://s3api-${RUNPOD_S3_DATACENTER,,}.runpod.io/"
 ```
 
-A real S3 roundtrip is intentionally pending; local validation covers manifest,
-command, locking, retention, fail-closed behavior, and dry-run logic only.
+A live S3 roundtrip passed on 2026-09-12, followed by full streaming readback
+verification of the 2,603,204,372-byte legacy update-100 checkpoint and both
+payload archives. The published assets archive is 29,015,511,040 bytes with
+SHA-256 `729d216f23275b8727584611065b75a62a3116425df67c919eddcccdc746c533`;
+the project archive is 1,310,720 bytes with SHA-256
+`9abd161704d5c766dac99435491ab4fe206eecea25e3b1f7e7940d06d63ab2b2`.
+`payload/LATEST.json` was independently downloaded after its publish-last step.
+See `reports/runpod_storage_validation.md` for the concise evidence record.
 
 ## 6. Launch, monitor, and stop safely
 
