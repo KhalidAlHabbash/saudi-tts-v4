@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import os
 import shutil
 from pathlib import Path
@@ -17,6 +19,7 @@ from src.training.durable_storage import (
     merge_manifest,
     new_record,
     single_flight_lock,
+    verify_remote_object,
 )
 from src.training.resume_probe import probe_profile_config, validate_probe_paths
 from src.training.train import (
@@ -46,6 +49,78 @@ def test_runpod_s3_commands_lowercase_endpoint_and_use_immutable_key():
         "--endpoint-url",
         "https://s3api-eu-ro-1.runpod.io/",
     ]
+
+
+def test_aws_cli_stream_sha256_reads_stdout_in_bounded_chunks(monkeypatch):
+    payload = b"remote-checkpoint-bytes" * 100
+
+    class Process:
+        stdout = io.BytesIO(payload)
+
+        @staticmethod
+        def wait():
+            return 0
+
+    monkeypatch.setattr("src.training.durable_storage.subprocess.Popen", lambda *args, **kwargs: Process())
+    client = AwsCli(bucket="volume_123", datacenter="EU-RO-1")
+
+    digest, size = client.stream_sha256("checkpoints/object.pt", chunk_size=17)
+
+    assert digest == hashlib.sha256(payload).hexdigest()
+    assert size == len(payload)
+
+
+class _RemoteObjectClient:
+    dry_run = False
+
+    def __init__(self, payload: bytes, metadata=None):
+        self.payload = payload
+        self.metadata = metadata or {}
+        self.stream_calls = 0
+
+    def head(self, key):
+        return {"ContentLength": len(self.payload), "Metadata": self.metadata}
+
+    def stream_sha256(self, key):
+        self.stream_calls += 1
+        return hashlib.sha256(self.payload).hexdigest(), len(self.payload)
+
+
+def test_remote_object_verification_accepts_stripped_metadata_after_full_stream_hash():
+    payload = b"verified remotely"
+    client = _RemoteObjectClient(payload, metadata={})
+    verify_remote_object(
+        client,
+        key="object.pt",
+        expected_size=len(payload),
+        expected_sha256=hashlib.sha256(payload).hexdigest(),
+    )
+    assert client.stream_calls == 1
+
+
+def test_remote_object_verification_rejects_present_mismatched_metadata_before_publish():
+    payload = b"verified remotely"
+    client = _RemoteObjectClient(payload, metadata={"sha256": "f" * 64})
+    with pytest.raises(RuntimeError, match="metadata verification failed"):
+        verify_remote_object(
+            client,
+            key="object.pt",
+            expected_size=len(payload),
+            expected_sha256=hashlib.sha256(payload).hexdigest(),
+        )
+    assert client.stream_calls == 0
+
+
+def test_remote_object_verification_rejects_streamed_hash_mismatch():
+    payload = b"wrong remote content"
+    client = _RemoteObjectClient(payload)
+    with pytest.raises(RuntimeError, match="Streaming object SHA-256"):
+        verify_remote_object(
+            client,
+            key="object.pt",
+            expected_size=len(payload),
+            expected_sha256="0" * 64,
+        )
 
 
 def test_durable_manifest_keeps_three_resumable_and_all_permanent():

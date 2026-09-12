@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -160,6 +161,35 @@ class AwsCli:
         )
         return result.stdout
 
+    def stream_sha256(self, key: str, *, chunk_size: int = 8 * 1024 * 1024) -> tuple[str, int]:
+        """Hash an S3 object downloaded on stdout without buffering it in memory."""
+        if self.dry_run:
+            self.run(
+                self.command(
+                    "s3", "cp", f"s3://{self.bucket}/{key}", "-", "--only-show-errors"
+                )
+            )
+            return "", 0
+        command = self.command(
+            "s3", "cp", f"s3://{self.bucket}/{key}", "-", "--only-show-errors"
+        )
+        digest = hashlib.sha256()
+        size = 0
+        # stderr is file-backed so an unexpectedly verbose CLI error cannot
+        # deadlock while stdout is consumed one bounded chunk at a time.
+        with tempfile.TemporaryFile() as stderr:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=stderr)
+            assert process.stdout is not None
+            for chunk in iter(lambda: process.stdout.read(chunk_size), b""):
+                digest.update(chunk)
+                size += len(chunk)
+            returncode = process.wait()
+            if returncode != 0:
+                stderr.seek(0)
+                detail = stderr.read().decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"Streaming S3 verification failed for {key}: {detail}")
+        return digest.hexdigest(), size
+
     def delete(self, key: str) -> None:
         self.run(
             self.command("s3", "rm", f"s3://{self.bucket}/{key}", "--only-show-errors"),
@@ -200,7 +230,17 @@ def single_flight_lock(path: Path) -> Iterator[None]:
         yield
 
 
-def _verify_head(
+def _reject_mismatched_sha_metadata(
+    head: dict[str, Any], *, key: str, expected_sha256: str
+) -> None:
+    raw_metadata = head.get("Metadata") or {}
+    metadata = {str(name).lower(): value for name, value in raw_metadata.items()}
+    metadata_sha = metadata.get("sha256")
+    if metadata_sha not in (None, "") and str(metadata_sha) != expected_sha256:
+        raise RuntimeError(f"HeadObject SHA-256 metadata verification failed for {key}")
+
+
+def verify_remote_object(
     client: AwsCli,
     *,
     key: str,
@@ -213,9 +253,12 @@ def _verify_head(
     if head is None or int(head.get("ContentLength", -1)) != expected_size:
         raise RuntimeError(f"HeadObject size verification failed for {key}")
     if expected_sha256 is not None:
-        metadata = {str(k).lower(): str(v) for k, v in head.get("Metadata", {}).items()}
-        if metadata.get("sha256") != expected_sha256:
-            raise RuntimeError(f"HeadObject SHA-256 metadata verification failed for {key}")
+        _reject_mismatched_sha_metadata(head, key=key, expected_sha256=expected_sha256)
+        remote_sha256, remote_size = client.stream_sha256(key)
+        if remote_size != expected_size:
+            raise RuntimeError(f"Streaming object size verification failed for {key}")
+        if remote_sha256 != expected_sha256:
+            raise RuntimeError(f"Streaming object SHA-256 verification failed for {key}")
 
 
 def _load_remote_manifest(client: AwsCli) -> dict[str, Any] | None:
@@ -247,7 +290,7 @@ def upload_checkpoint(
         existing_head = client.head(record["object_key"])
         if existing_head is None:
             client.upload(checkpoint, record["object_key"], sha256=digest)
-        _verify_head(
+        verify_remote_object(
             client,
             key=record["object_key"],
             expected_size=record["size"],
@@ -261,7 +304,7 @@ def upload_checkpoint(
             sidecar_head = client.head(record["sha256_sidecar_key"])
             if sidecar_head is None:
                 client.upload(sidecar, record["sha256_sidecar_key"])
-            _verify_head(
+            verify_remote_object(
                 client,
                 key=record["sha256_sidecar_key"],
                 expected_size=sidecar.stat().st_size,
@@ -275,7 +318,7 @@ def upload_checkpoint(
             manifest_path = temporary_dir / "LATEST.json"
             manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             client.upload(manifest_path, LATEST_KEY)
-            _verify_head(client, key=LATEST_KEY, expected_size=manifest_path.stat().st_size)
+            verify_remote_object(client, key=LATEST_KEY, expected_size=manifest_path.stat().st_size)
 
         # Retention is intentionally after publishing LATEST. Stage/milestone/best
         # objects are referenced in `permanent` and can never enter this list.
@@ -337,6 +380,11 @@ def restore_checkpoint(
         head = client.head(record["object_key"])
         if head is None or int(head.get("ContentLength", -1)) != int(record["size"]):
             raise RuntimeError("Remote checkpoint size disagrees with LATEST.json")
+        _reject_mismatched_sha_metadata(
+            head,
+            key=record["object_key"],
+            expected_sha256=str(record["sha256"]),
+        )
         if client.head(record["sha256_sidecar_key"]) is None:
             raise RuntimeError("Remote checkpoint SHA-256 sidecar is missing")
         sidecar_digest = client.download(record["sha256_sidecar_key"], "-").strip().split()[0]

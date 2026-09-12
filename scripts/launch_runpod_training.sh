@@ -6,6 +6,9 @@ pid_file="/workspace/saudi-tts-training.pid"
 log_file="/workspace/saudi-tts-training.log"
 lock_file="/workspace/saudi-tts-training.launch.lock"
 
+source "$project_root/scripts/validate_runpod_runtime_env.sh"
+validate_runpod_runtime_env live
+
 exec 9>"$lock_file"
 if ! flock -n 9; then
   echo "Another launcher holds $lock_file" >&2

@@ -4,6 +4,14 @@ set -euo pipefail
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 destination="${1:-$project_root/checkpoints/silma-saudi/model_last.pt}"
 shift || true
+runtime_env_mode="live"
+for argument in "$@"; do
+  if [[ "$argument" == "--dry-run" ]]; then
+    runtime_env_mode="dry-run"
+  fi
+done
+source "$project_root/scripts/validate_runpod_runtime_env.sh"
+validate_runpod_runtime_env "$runtime_env_mode"
 
 cd "$project_root"
 export PYTHONPATH="$project_root"

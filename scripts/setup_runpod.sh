@@ -19,14 +19,14 @@ if not torch.version.cuda or not torch.version.cuda.startswith("12.8"):
     raise SystemExit(f"Expected template CUDA 12.8; found {torch.version.cuda}")
 PY
 
-if [[ -f .venv-runpod/pyvenv.cfg ]] && ! grep -Eq '^include-system-site-packages = true$' .venv-runpod/pyvenv.cfg; then
-  echo ".venv-runpod exists without system site packages; move it aside and rerun setup" >&2
-  exit 1
-fi
-python3 -m venv --system-site-packages .venv-runpod
-.venv-runpod/bin/python -m pip install --upgrade pip
-.venv-runpod/bin/pip install -r requirements-runpod.txt
-.venv-runpod/bin/python -m pip check
+# A clean rebuild makes an interrupted resolver attempt harmless. --clear only
+# resets this project venv; the template's system Python and Torch stay intact.
+python3 -m venv --clear --system-site-packages .venv-runpod
+.venv-runpod/bin/python -m pip install --no-deps --only-binary=:all: setuptools==80.9.0 wheel==0.45.1
+.venv-runpod/bin/python -m pip install --no-deps --no-build-isolation -r requirements-runpod.txt
+.venv-runpod/bin/python scripts/prepare_f5_runtime.py
+PYTHONPATH="$project_root" .venv-runpod/bin/python scripts/verify_runpod_dependencies.py \
+  --report reports/runpod_dependency_diagnostic.json
 
 PYTHONPATH="$project_root" .venv-runpod/bin/python - <<'PY'
 import json
@@ -73,6 +73,7 @@ report = {
     "config": "configs/train_runpod.yaml",
     "template_id": "runpod-torch-v280",
     "template_image": "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
+    "dependency_profile": "minimal-f5-runtime-v1",
 }
 Path("reports").mkdir(exist_ok=True)
 Path("reports/runpod_environment_diagnostic.json").write_text(
