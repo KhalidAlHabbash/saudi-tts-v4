@@ -21,7 +21,12 @@ from src.training.data import (
     read_manifest,
     vocabulary_audit,
 )
-from src.training.train import clip_gradients, require_finite_loss, resolve_stage_stop
+from src.training.train import (
+    clip_gradients,
+    normalize_resume_position,
+    require_finite_loss,
+    resolve_stage_stop,
+)
 
 
 def test_pinned_config_and_local_assets_are_consistent():
@@ -55,6 +60,25 @@ def test_runpod_config_preserves_effective_batch_and_requires_cuda():
     assert cloud["benchmark"] == {"source_update": 100, "allowed_stop_updates": [200, 300]}
     assert cloud["checkpointing"]["durable_upload"]["enabled"] is True
     assert "durable_upload" not in local["checkpointing"]
+
+
+def test_resume_position_normalizes_exact_epoch_boundary():
+    assert normalize_resume_position(0, 52088, 52088) == (1, 0)
+    assert normalize_resume_position(3, 52088, 52088) == (4, 0)
+
+
+def test_resume_position_preserves_in_epoch_progress():
+    assert normalize_resume_position(2, 0, 52088) == (2, 0)
+    assert normalize_resume_position(2, 1234, 52088) == (2, 1234)
+
+
+@pytest.mark.parametrize(
+    ("epoch", "next_batch", "batches_per_epoch"),
+    [(-1, 0, 1), (0, -1, 1), (0, 2, 1), (0, 0, 0)],
+)
+def test_resume_position_rejects_invalid_state(epoch, next_batch, batches_per_epoch):
+    with pytest.raises(ValueError):
+        normalize_resume_position(epoch, next_batch, batches_per_epoch)
 
 
 def test_manifest_dataset_produces_f5_padded_mel(tmp_path):

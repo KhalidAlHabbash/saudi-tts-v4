@@ -96,6 +96,31 @@ def resolve_stage_stop(optimization: dict[str, Any], override: int | None = None
     return target
 
 
+def normalize_resume_position(
+    epoch: int,
+    next_batch: int,
+    batches_per_epoch: int,
+) -> tuple[int, int]:
+    """Canonicalize an exact end-of-epoch checkpoint to the next epoch.
+
+    DataLoader materializes a batch before the training loop can skip it. Leaving
+    an exact boundary as ``next_batch == len(loader)`` would therefore reload and
+    discard a complete epoch on resume. Positions within an epoch are preserved.
+    """
+    if epoch < 0:
+        raise ValueError("Checkpoint epoch cannot be negative")
+    if batches_per_epoch <= 0:
+        raise ValueError("Training loader must contain at least one batch")
+    if next_batch < 0 or next_batch > batches_per_epoch:
+        raise ValueError(
+            f"Checkpoint next_batch {next_batch} is outside loader range "
+            f"0..{batches_per_epoch}"
+        )
+    if next_batch == batches_per_epoch:
+        return epoch + 1, 0
+    return epoch, next_batch
+
+
 def resolve_training_stop(
     cfg: dict[str, Any],
     *,
@@ -442,7 +467,7 @@ def train(
     resume = run_cfg["checkpointing"]["resume"]
     if resume == "auto" and last_path.exists():
         ema = make_ema(model).to(device)
-        global_update, start_epoch, next_batch = load_resume(
+        global_update, saved_epoch, saved_next_batch = load_resume(
             last_path,
             model=model,
             optimizer=optimizer,
@@ -456,6 +481,16 @@ def train(
             ),
             legacy_migration=run_cfg["checkpointing"].get("legacy_mac_to_cuda_migration"),
         )
+        start_epoch, next_batch = normalize_resume_position(
+            saved_epoch,
+            saved_next_batch,
+            len(train_loader),
+        )
+        if (start_epoch, next_batch) != (saved_epoch, saved_next_batch):
+            print(
+                "resume_boundary_normalized="
+                f"epoch:{saved_epoch}->{start_epoch},next_batch:{saved_next_batch}->0"
+            )
         print(f"resumed={last_path} update={global_update} epoch={start_epoch} next_batch={next_batch}")
     else:
         load_pretrained(
@@ -564,14 +599,19 @@ def train(
                 _append_metric(metric_path, val_metric)
                 print(json.dumps(val_metric, sort_keys=True))
 
+            checkpoint_epoch, checkpoint_next_batch = normalize_resume_position(
+                epoch,
+                batch_index + 1,
+                len(train_loader),
+            )
             save_args = {
                 "model": model,
                 "optimizer": optimizer,
                 "scheduler": scheduler,
                 "ema": ema,
                 "update": global_update,
-                "epoch": epoch,
-                "next_batch": batch_index + 1,
+                "epoch": checkpoint_epoch,
+                "next_batch": checkpoint_next_batch,
                 "device": device,
                 "sampler_fingerprint": sampler_fingerprint,
                 "minimum_free_gib": minimum_free_gib,

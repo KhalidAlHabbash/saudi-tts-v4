@@ -34,7 +34,14 @@ def main() -> None:
     parser.add_argument("--nfe-steps", type=int, help="Override ODE steps for a bounded synthesis smoke test")
     parser.add_argument("--online", action="store_true", help="Use online rather than EMA checkpoint weights")
     parser.add_argument("--cpu", action="store_true", help="Force CPU")
+    parser.add_argument(
+        "--device-preference",
+        choices=("cuda_then_mps_then_cpu", "mps_then_cpu", "cpu"),
+        help="Override the configured device order (useful for RunPod CUDA evaluation)",
+    )
     args = parser.parse_args()
+    if args.cpu and args.device_preference:
+        parser.error("--cpu and --device-preference cannot be used together")
 
     with resolve_path(args.config).open(encoding="utf-8") as handle:
         eval_cfg = yaml.safe_load(handle)
@@ -58,7 +65,12 @@ def main() -> None:
     unknown = sorted({char for char in reference_text + text if char not in vocab})
     if unknown:
         raise ValueError(f"Text contains characters outside the pinned SILMA vocabulary: {unknown!r}")
-    selection = select_device(prefer_mps=not args.cpu)
+    device_preference = (
+        "cpu"
+        if args.cpu
+        else args.device_preference or eval_cfg.get("device_preference", "mps_then_cpu")
+    )
+    selection = select_device(preference=device_preference)
     device = selection.device
     print(f"device={device} ({selection.reason})")
     seed_everything(int(eval_cfg["seed"]))
