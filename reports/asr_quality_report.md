@@ -10,7 +10,7 @@ system.
 - Model: `openai/whisper-small`
 - Immutable revision: `973afd24965f72e36ca33b3055d56a652f456b4d`
 - Local cache snapshot:
-  `/Users/khalidhabbash/.cache/huggingface/hub/models--openai--whisper-small/snapshots/973afd24965f72e36ca33b3055d56a652f456b4d`
+  the local Hugging Face cache at revision `973afd24965f72e36ca33b3055d56a652f456b4d`
 - `model.safetensors`: 966,995,080 bytes; SHA-256
   `1d7734884874f1a1513ed9aa760a4f8e97aaa02fd6d93a3a85d27b2ae9ca596b`
 - Complete pinned file hashes, per-sample predictions, and summaries are in

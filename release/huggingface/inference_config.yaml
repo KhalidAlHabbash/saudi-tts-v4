@@ -1,0 +1,30 @@
+model:
+  architecture:
+    dim: 768
+    depth: 18
+    heads: 12
+    ff_mult: 2
+    text_dim: 512
+    text_mask_padding: true
+    conv_layers: 4
+    pe_attn_head: null
+    attn_backend: torch
+    attn_mask_enabled: false
+    checkpoint_activations: false
+  mel:
+    target_sample_rate: 24000
+    n_mel_channels: 100
+    hop_length: 256
+    win_length: 1024
+    n_fft: 1024
+    mel_spec_type: vocos
+vocos:
+  repo_id: charactr/vocos-mel-24khz
+  revision: 0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21
+inference:
+  seed: 20260911
+  nfe_steps: 32
+  cfg_strength: 2.0
+  sway_sampling_coefficient: -1.0
+  speed: 1.0
+  cross_fade_seconds: 0.15

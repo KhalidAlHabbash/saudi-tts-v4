@@ -1,0 +1,10 @@
+{"id":"level_01_greeting","complexity":"easy","category":"identity_greeting","text":"هلا، معك خالد، وهذا اختبار بسيط للصوت."}
+{"id":"level_02_arrival","complexity":"easy","category":"conversational_saudi","text":"أبشر، أنا بالطريق وبوصل عندك بعد عشر دقايق."}
+{"id":"level_03_coffee","complexity":"easy","category":"conversational_saudi","text":"وش رايك نطلب قهوة ونكمل الشغل بعد المغرب؟"}
+{"id":"level_04_location","complexity":"medium","category":"hijazi_conversation","text":"دحين أرسل لك اللوكيشن، وإذا وصلت كلمني على طول."}
+{"id":"level_05_numbers","complexity":"medium","category":"numbers_and_currency","text":"طلبت ثلاث قهوات وساندويتشين، وصار الحساب مئة وسبعة وثلاثين ريالا وخمسين هللة."}
+{"id":"level_06_datetime","complexity":"medium","category":"date_and_time","text":"موعد الرحلة يوم الخميس، السادس والعشرين من سبتمبر، الساعة السابعة وخمس وأربعين دقيقة مساء."}
+{"id":"level_07_loanwords","complexity":"medium","category":"technology_loanwords","text":"حدثت التطبيق على الآيفون، لكن البلوتوث والواي فاي ما اشتغلوا إلا بعد إعادة التشغيل."}
+{"id":"level_08_formal_msa","complexity":"hard","category":"formal_msa","text":"تسهم التقنيات الحديثة في تحسين جودة الخدمات، بشرط أن تراعي الخصوصية وسهولة الاستخدام لجميع أفراد المجتمع."}
+{"id":"level_09_long_saudi","complexity":"hard","category":"long_conversational_saudi","text":"يوم طلعت من الدوام كان الطريق زحمة، فقلت بأمر البقالة وآخذ الأغراض، وبعدها أرجع البيت قبل ما يبدأ الاجتماع."}
+{"id":"level_10_conditional","complexity":"hard","category":"conditional_and_precise_time","text":"إذا وصل القطار في موعده الساعة التاسعة وسبع عشرة دقيقة، بنتجه مباشرة إلى مركز المؤتمرات، أما إذا تأخر، فبنبلغ الفريق ونغير جدول العرض."}

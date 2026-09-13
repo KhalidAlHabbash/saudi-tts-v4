@@ -10,6 +10,7 @@ import torch
 from ema_pytorch import EMA
 from f5_tts.model import CFM, DiT
 from f5_tts.model.utils import get_tokenizer
+from safetensors.torch import load_file as load_safetensors
 
 from .config import resolve_path
 
@@ -64,8 +65,14 @@ def load_pretrained(model: CFM, checkpoint_path: str | Path, *, weights: str = "
 
 def load_inference_weights(model: CFM, checkpoint_path: str | Path, *, use_ema: bool = True) -> None:
     path = resolve_path(checkpoint_path)
-    checkpoint = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
-    state = _online_state(checkpoint, use_ema=use_ema)
+    if path.suffix == ".safetensors":
+        if not use_ema:
+            raise ValueError("SafeTensors releases contain EMA weights only; remove --online")
+        state = load_safetensors(path, device="cpu")
+        checkpoint = None
+    else:
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
+        state = _online_state(checkpoint, use_ema=use_ema)
     model.load_state_dict(state, strict=True)
     del state, checkpoint
     gc.collect()
@@ -74,4 +81,3 @@ def load_inference_weights(model: CFM, checkpoint_path: str | Path, *, use_ema: 
 def make_ema(model: CFM) -> EMA:
     """Use the exact ema-pytorch defaults used by F5-TTS 1.1.7 Trainer."""
     return EMA(model, include_online_model=False)
-

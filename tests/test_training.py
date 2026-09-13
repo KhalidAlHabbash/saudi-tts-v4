@@ -8,6 +8,7 @@ import pytest
 import soundfile as sf
 import torch
 from ema_pytorch import EMA
+from safetensors.torch import save_file as save_safetensors
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -27,6 +28,22 @@ from src.training.train import (
     require_finite_loss,
     resolve_stage_stop,
 )
+from src.training.model import load_inference_weights
+
+
+def test_inference_loader_accepts_ema_only_safetensors(tmp_path):
+    model = torch.nn.Linear(2, 2)
+    expected = {key: value.detach().clone() for key, value in model.state_dict().items()}
+    path = tmp_path / "model.safetensors"
+    save_safetensors(expected, path)
+    with torch.no_grad():
+        model.weight.zero_()
+        model.bias.zero_()
+    load_inference_weights(model, path)
+    for key, value in model.state_dict().items():
+        assert torch.equal(value, expected[key])
+    with pytest.raises(ValueError, match="EMA weights only"):
+        load_inference_weights(model, path, use_ema=False)
 
 
 def test_pinned_config_and_local_assets_are_consistent():

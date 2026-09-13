@@ -1,112 +1,183 @@
-# Saudi Arabic TTS fine-tuning (private research pilot)
+# Saudi TTS V4
 
-This repository is an auditable wrapper for adapting SILMA TTS v1 / F5-TTS to Saudi-labelled Arabic speech. The Mac run was stopped after its full update-100 checkpoint; the current phase is guarded migration and benchmarking on one RunPod Secure RTX PRO 4500 Blackwell with 32 GB VRAM.
+[![Hugging Face](https://img.shields.io/badge/🤗%20Hugging%20Face-Saudi%20TTS%20V4-yellow)](https://huggingface.co/khalidhabbash/Saudi-tts-v4)
+[![Python 3.11–3.12](https://img.shields.io/badge/python-3.11–3.12-blue)](pyproject.toml)
+[![Code: MIT](https://img.shields.io/badge/code-MIT-green)](LICENSE)
+[![Weights: CC BY--NC--SA 4.0](https://img.shields.io/badge/weights-CC%20BY--NC--SA%204.0-lightgrey)](MODEL_LICENSE.md)
 
-## Scope and selected assets
+Saudi TTS V4 is a reference-conditioned text-to-speech model adapted
+from [SILMA TTS v1](https://huggingface.co/silma-ai/silma-tts). It targets
+Najdi-, Hijazi-, and Khaliji-oriented Arabic, produces 24-kHz speech, and lets
+the caller provide a short reference recording at inference time.
 
-The prepared corpus is the pinned `MohamedRashad/SADA22` Hugging Face mirror at revision `094fe2c0fe4b549a4f34349e6e0622e7c7273c2d`. Only rows labelled Najdi, Hijazi, or Khaliji and passing the Gate B audit are retained. SADA is broadcast speech, not a clean single-speaker corpus; the mirror does not contain stable speaker/show/actor IDs.
+The default inference artifact is the **EMA weight set from update 104,276**:
+`models/stage4/model.safetensors`. It contains acoustic-model weights only—no
+optimizer, scheduler, random-number state, dataset audio, or private reference
+recordings.
 
-The selected model is SILMA TTS v1, the 162,666,852-parameter F5-TTS/DiT acoustic model. It is paired with fixed Vocos at 24 kHz. These exact revisions and file hashes are in [`models/base/asset_manifest.json`](models/base/asset_manifest.json). This choice is the pinned Saudi-research baseline; other datasets/models remain rights-gated candidates.
+- Size: 650,704,952 bytes
+- SHA-256: `0f89df26517617ae935f8267452f2f196467cb39b80df0af93d13be5ead3d431`
 
-Use is private, local, and non-commercial research only under the reported SADA CC BY-NC-SA 4.0 terms. This project makes no speaker-disjoint claim. Do not distribute raw audio or weights, use the material commercially, or perform identity/voice cloning without separate rights, consent, and attribution review.
+## Architecture
 
-## Repository map
+| Component | Design |
+| --- | --- |
+| Acoustic model | F5-TTS conditional flow matching |
+| Backbone | 18-layer DiT, hidden size 768, 12 attention heads |
+| Parameters | 162,666,852 acoustic-model parameters |
+| Conditioning | User-provided reference audio plus its exact transcript |
+| Acoustic representation | 100-channel mel spectrogram |
+| Vocoder | Fixed `charactr/vocos-mel-24khz` |
+| Output | Mono, 24 kHz |
 
-- `configs/`: data, training, evaluation, and held-out phrase contracts.
-- `src/data/`: acquisition/preprocessing, split, and diagnostic ASR QC code.
-- `src/training/`: asset loading, data/model integration, checkpoints, and trainer.
-- `src/evaluation/`: phrase loading and synthesis.
-- `scripts/`: environment bootstrap, asset download, and the sole full-run launcher.
-- `data/`: immutable raw source plus processed audio/manifests and interim ledgers.
-- `models/base/`: pinned SILMA and Vocos assets (materialized locally).
-- `reports/`: acquisition, preprocessing, environment, MPS, validation, and ASR diagnostics.
-- `docs/`: research decisions, governance, training plan, and the historical [`training_guide.md`](docs/training_guide.md).
+The model is multi-speaker and reference-conditioned; it does not expose a
+fixed list of built-in voices. A clean reference clip guides voice identity and
+prosody for each request.
 
-## Bootstrap and data preparation
+## Training
 
-On the native arm64 CPython 3.11 Mac, bootstrap installs the hash-locked environment, verifies/downloads model assets, and runs tests. Project metadata also permits Python 3.12 for the official RunPod template:
+The data pipeline selected Saudi-labelled Najdi, Hijazi, and Khaliji clips from
+the pinned `MohamedRashad/SADA22` mirror. It preserved dialect text, normalized
+Unicode and whitespace conservatively, resampled accepted audio to 24-kHz mono,
+rejected invalid or annotated samples, and created deterministic held-out
+validation and test manifests.
+
+Stage 4 completed at update 104,276:
+
+- 104,176 eligible training clips per complete pass, each at most eight seconds
+- eight completed dataset passes
+- effective batch size eight (batch two, gradient accumulation four)
+- AdamW with gradient clipping, activation checkpointing, and EMA tracking
+- CUDA BF16 training on one NVIDIA GPU
+- validation every 250 optimizer updates
+- fixed 120,000-update scheduler horizon; training intentionally stopped at the
+  Stage 4 boundary
+
+The full data audit and training record are in `reports/` and `docs/`. Dataset
+audio and full resumable checkpoints are intentionally excluded from Git.
+
+## Quick start from GitHub
+
+The Stage 4 weight is tracked with Git LFS. Install Git LFS before cloning or
+run `git lfs pull` in an existing clone.
 
 ```bash
-./scripts/bootstrap.sh
+git lfs install
+git clone https://github.com/KhalidAlHabbash/saudi-tts-finetune.git
+cd saudi-tts-finetune
+git lfs pull
+
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+PYTHONPATH=. python -m src.training.assets --download
 ```
 
-To verify or acquire the pinned model assets independently:
+The asset command downloads and hash-verifies the pinned SILMA configuration,
+vocabulary, base checkpoint, and Vocos files. The Stage 4 EMA weight remains the
+default inference checkpoint.
+
+## Synthesize speech
+
+Provide all three text/audio inputs explicitly:
+
+1. a reference audio file you have permission to use;
+2. its exact transcript;
+3. the Arabic text to synthesize.
 
 ```bash
-./scripts/download_models.sh
+PYTHONPATH=. .venv/bin/python -m src.evaluation.synthesize \
+  --reference-audio ./my_reference.wav \
+  --reference-text "هلا والله، هذا تسجيل مرجعي واضح للصوت." \
+  --text "أهلاً وسهلاً، هذه تجربة للنموذج السعودي." \
+  --output ./outputs/my_sample.wav
 ```
 
-The preprocessing CLI supports acquisition (`--download`), full raw rehash (`--verify-only`), existing-manifest/audio checks (`--check`), and deterministic manifest verification (`--determinism-check`). These are the actual options exposed by `src.data.preprocess`; acquisition and materialization can write data.
+The default device order on macOS is MPS then CPU. On a CUDA host, add
+`--device-preference cuda_then_mps_then_cpu`. Use `--cpu` to force CPU and
+`--nfe-steps` to trade generation speed for quality.
+
+Reference-audio recommendations:
+
+- clean speech with minimal music, reverb, or background noise;
+- approximately 5–12 seconds;
+- one speaker;
+- a verbatim transcript matching the spoken recording;
+- WAV is preferred, although the upstream preprocessing utility can handle
+  other common formats when FFmpeg is available.
+
+No personal reference audio is included in this repository or the Hugging Face
+release.
+
+## Hugging Face inference package
+
+The [Hugging Face model repository](https://huggingface.co/khalidhabbash/Saudi-tts-v4)
+contains the same SafeTensors artifact, a standalone `inference.py`, the custom
+vocabulary, pinned inference configuration, requirements, and model card.
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m data.preprocess --config configs/data.yaml --check
-PYTHONPATH=src .venv/bin/python -m data.preprocess --config configs/data.yaml --determinism-check
-PYTHONPATH=src .venv/bin/python -m data.preprocess --config configs/data.yaml --verify-only
+hf download khalidhabbash/Saudi-tts-v4 --local-dir ./Saudi-tts-v4
+cd ./Saudi-tts-v4
+pip install -r requirements.txt
+python inference.py \
+  --reference-audio ../my_reference.wav \
+  --reference-text "هلا والله، هذا تسجيل مرجعي واضح للصوت." \
+  --text "أهلاً وسهلاً، هذه تجربة للنموذج السعودي." \
+  --output ../output.wav
 ```
 
-The completed Gate B history is recorded in [`reports/preprocessing_report.md`](reports/preprocessing_report.md); it is not necessary to rerun it to use the existing manifests.
+## Reproduce preprocessing or training
 
-## Audit, tests, and smoke history
+The repository retains the audited preprocessing and training implementation:
 
-The preparation validation recorded `pip check` success, lock/hash verification, exact split copies, zero cross-split exact-audio/exact-text/configured-loose-text groups, and zero accepted prohibited annotation tokens. The deterministic 36-clip Whisper comparison is diagnostic only; it did not modify manifests. Historical bounded compute is described in [`reports/validation_report.md`](reports/validation_report.md). No additional model compute is implied by this README.
+- `src/data/`: validation, normalization, manifest creation, and splits
+- `src/training/`: SILMA/F5 model integration, batching, training, EMA, and
+  strict resumable checkpoints
+- `src/evaluation/`: single-prompt and fixed-suite synthesis
+- `configs/`: local MPS and RunPod CUDA profiles
+- `scripts/`: bootstrap, asset verification, guarded launch, and durable storage
 
-Non-model checks:
-
-```bash
-.venv/bin/python -m pytest -q
-PYTHONPATH=src .venv/bin/python -m src.training.train --help
-PYTHONPATH=src .venv/bin/python -m src.evaluation.synthesize --help
-```
-
-`--smoke-one-step`, `--check-model`, and `--forward-only` are real options, but they respectively update smoke weights, construct/load the model, and execute a model forward; use only when that compute is explicitly authorized.
-
-## Training and resume
-
-The sole real training command is shown here and was not run during documentation validation:
+The local training entry point is:
 
 ```bash
 ./scripts/train.sh
 ```
 
-It uses `configs/train.yaml`: FP32, batch size 1, gradient accumulation 8, zero workers, activation checkpointing, ordinary PyTorch attention, no frozen layers, and MPS-then-CPU selection. `runtime.allow_cpu_fallback` permits CPU when MPS is unavailable. This local profile does not select CUDA.
+This command starts training and is not needed for inference. Consult
+`docs/training_plan.md` and `docs/runpod.md` before attempting a new run.
 
-For RunPod, use the official Python 3.12/Torch 2.8 template and the separate
-CUDA/BF16 profile in [docs/runpod.md](docs/runpod.md): batch 2, accumulation 4,
-activation checkpointing, TF32, four workers, pinned memory, a 70 GB Pod working
-volume, and a separate 100 GB STANDARD network volume accessed through RunPod
-S3. The detached launcher is `./scripts/launch_runpod_training.sh`; ongoing
-durability is RunPod-only, with no Mac backup workflow. The mandatory order is
-resume probes, deterministic update-200/300 benchmark, strict durable upload,
-separate restore drill, then a formal stage.
-
-With `checkpointing.resume: auto`, an existing `checkpoints/silma-saudi/model_last.pt` is restored only when it contains the project model, optimizer, scheduler, EMA, progress, and RNG state. New checkpoints also store a sampler fingerprint and RunPod resumes reject mismatches before applying state. The only missing-fingerprint exception is the known update-100/epoch-0 Mac-to-CUDA migration, which resets its non-portable batch position once. Checkpoints are written under `checkpoints/silma-saudi/`; metrics under `runs/silma-saudi/metrics.jsonl`.
-
-## Inference
-
-Synthesis requires the exact reference WAV and transcript configured in `configs/evaluation.yaml`, and either `--text` or a held-out `--phrase-id`:
+## Tests
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m src.evaluation.synthesize \
-  --checkpoint checkpoints/silma-saudi/model_last.pt \
-  --text "هلا والله، وش أخبارك اليوم؟" \
-  --output outputs/evaluation/synthesis.wav
+.venv/bin/python -m pytest -q
+PYTHONPATH=. .venv/bin/python -m src.evaluation.synthesize --help
+PYTHONPATH=. .venv/bin/python -m src.training.export_ema --help
 ```
 
-Use `--cpu` to force CPU, `--nfe-steps` for a bounded synthesis setting, and `--phrase-id` with an ID from `configs/saudi_eval_phrases.jsonl`. The authoritative fine-tuned checkpoint is the stopped Mac update-100 artifact; RunPod probes write only to `outputs/runpod-resume-probe/`.
+The release exporter verifies the immutable full checkpoint SHA-256, training
+update, EMA tensor names, shapes, dtypes, and every tensor value before writing
+the SafeTensors artifact and its metadata.
 
-## Current measured state
+## Limitations and responsible use
 
-- Raw mirror: 253,166 rows / 437.545 h; 31 Parquet shards; all acquired shard hashes match the pinned mirror revision.
-- Final processed set: 125,534 accepted clips / 148.722258 h; 119,972 train, 2,717 validation, 2,845 test.
-- Accepted dialect counts: 73,387 Najdi; 28,534 Hijazi; 23,613 Khaliji.
-- Canonical manifest SHA-256: `047163a1e010f9e87fed12eeec67d331870cf92d7ee4761ff046bb7cab3de194`.
-- Processed audio: 24-kHz mono PCM-16; 25,704,751,276 bytes.
-- Base assets: SILMA revision `ac81834c5ce305504fe4c7602187042fdd6913db`; F5-TTS source revision `c96c3aeed84f5e02aa54dc42c1193537ead39837`; Vocos revision `0feb3fdd929bcd6649e0e7c5a688cf7dd012ef21`.
+- Output quality depends strongly on reference-audio cleanliness and transcript
+  accuracy.
+- Pronunciation can fail on uncommon names, dense diacritics, long numbers,
+  English code switching, and text outside the training domain.
+- SADA broadcast metadata lacks stable actor, program, and speaker identifiers;
+  strict speaker-disjoint evaluation therefore cannot be claimed.
+- Use only reference voices you own or are authorized to synthesize. Do not use
+  this project for impersonation, fraud, deceptive media, or misrepresentation.
+- Clearly disclose generated audio as synthetic where appropriate.
 
-## MPS, CPU, limitations, and troubleshooting
+## Licenses and attribution
 
-MPS is selected only when available in the host process. Restricted execution reported MPS built but unavailable and therefore selected CPU; documented host evidence showed a finite, no-grad SILMA forward with MPS fallback disabled. MPS backward/optimizer behavior and end-to-end training memory are untested. Start with FP32 and `num_workers: 0`; if MPS is unavailable or unstable, use CPU and preserve the report distinction. Do not enable fallback and infer parity, and do not treat Whisper disagreement as transcript truth.
+- Project code: [MIT](LICENSE)
+- Stage 4 EMA weights: [CC BY-NC-SA 4.0](MODEL_LICENSE.md)
+- Base model: SILMA TTS v1, Apache-2.0
+- F5-TTS runtime: MIT
+- Training data: SADA/SADA22, attributed to SDAIA and the Saudi Broadcasting
+  Authority under the recorded CC BY-NC-SA 4.0 terms
 
-For failures, first verify `.venv/bin/python --version`, run `.venv/bin/python -m pip check`, inspect `reports/environment_report.md` and `reports/mps_diagnostic.md`, and confirm all asset hashes against `models/base/asset_manifest.json`. Keep raw data immutable and do not delete quarantine material while investigating.
-
-For research decisions and known risks, see [`docs/project_state.md`](docs/project_state.md), [`reports/validation_report.md`](reports/validation_report.md), and [`docs/training_plan.md`](docs/training_plan.md). For provenance and rights boundaries, see [`docs/data_governance.md`](docs/data_governance.md) and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for exact upstream
+revisions, hashes, and provenance links.

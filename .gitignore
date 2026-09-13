@@ -42,6 +42,7 @@ mlruns/
 *.wav
 *.flac
 *.mp3
+*.m4a
 
 # Large downloaded upstream assets
 models/
@@ -50,5 +51,9 @@ models/**
 !models/base/
 models/base/**
 !models/base/asset_manifest.json
+!models/stage4/
+!models/stage4/model.safetensors
+!models/stage4/model.safetensors.sha256
+!models/stage4/metadata.json
 third_party/
 .cache/

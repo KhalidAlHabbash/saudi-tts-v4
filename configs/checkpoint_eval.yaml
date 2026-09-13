@@ -1,10 +1,8 @@
-checkpoint: models/stage4/model.safetensors
-use_ema: true
+train_config: configs/train.yaml
+prompts: configs/checkpoint_eval_prompts.jsonl
 vocab: models/base/silma-tts-v1-ac81834c/vocab.txt
 vocos_dir: models/base/vocos-mel-24khz-0feb3fdd
-phrases: configs/saudi_eval_phrases.jsonl
-output_dir: outputs/evaluation
-device_preference: mps_then_cpu
+use_ema: true
 seed: 20260911
 nfe_steps: 32
 cfg_strength: 2.0

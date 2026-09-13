@@ -45,7 +45,7 @@
     ],
     "model_id": "openai/whisper-small",
     "revision": "973afd24965f72e36ca33b3055d56a652f456b4d",
-    "snapshot_path": "/Users/khalidhabbash/.cache/huggingface/hub/models--openai--whisper-small/snapshots/973afd24965f72e36ca33b3055d56a652f456b4d"
+    "snapshot_path": "models--openai--whisper-small/snapshots/973afd24965f72e36ca33b3055d56a652f456b4d"
   },
   "purpose": "diagnostic_asr_qc_only_not_transcript_correction_or_filtering",
   "samples": [

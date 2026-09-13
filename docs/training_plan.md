@@ -1,6 +1,6 @@
 # Training plan
 
-This plan describes the next authorized experiment; it is not evidence that full fine-tuning has run. The preparation gate is PASS for private/local/non-commercial research, with native Saudi transcript review and MPS backward validation still outstanding.
+This plan records the completed Stage 4 experiment and the remaining optional Stage 5 continuation. Stage 4 stopped exactly at update 104,276 after eight dataset passes; native Saudi transcript review and MPS backward validation remain separate limitations.
 
 ## Frozen inputs
 
@@ -35,6 +35,6 @@ Report checkpoint hashes, device, configuration, manifest hash, phrase IDs, and 
 
 ## Stop conditions
 
-Stop on unsupported MPS operations, NaN/Inf loss or gradients, allocator pressure, checkpoint corruption, non-finite audio, manifest/hash drift, or any rights/consent uncertainty. Do not publish raw audio, weights, or a service; commercial use, distribution, and identity cloning require separate written rights and consent review.
+Stop on unsupported MPS operations, NaN/Inf loss or gradients, allocator pressure, checkpoint corruption, non-finite audio, or manifest/hash drift. Public releases must exclude raw audio, private reference recordings, and full optimizer/scheduler/RNG checkpoint state. Reference-conditioned inference requires authorization from the reference speaker.
 
 The historical [`docs/training_guide.md`](training_guide.md) remains a supplementary command-oriented guide. This plan is the current scope and gate record; useful details there should be reconciled against the frozen configs and reports before any run.

@@ -28,8 +28,16 @@ def main() -> None:
     parser.add_argument("--checkpoint")
     parser.add_argument("--text", help="Text to synthesize; omit with --phrase-id")
     parser.add_argument("--phrase-id", help="ID from the held-out phrase suite")
-    parser.add_argument("--reference-audio")
-    parser.add_argument("--reference-text")
+    parser.add_argument(
+        "--reference-audio",
+        required=True,
+        help="User-supplied consented reference WAV; no reference voice is bundled",
+    )
+    parser.add_argument(
+        "--reference-text",
+        required=True,
+        help="Exact transcript of --reference-audio",
+    )
     parser.add_argument("--output")
     parser.add_argument("--nfe-steps", type=int, help="Override ODE steps for a bounded synthesis smoke test")
     parser.add_argument("--online", action="store_true", help="Use online rather than EMA checkpoint weights")
@@ -47,8 +55,8 @@ def main() -> None:
         eval_cfg = yaml.safe_load(handle)
     train_cfg = load_config("configs/train.yaml")
     checkpoint = resolve_path(args.checkpoint or eval_cfg["checkpoint"])
-    reference_audio = resolve_path(args.reference_audio or eval_cfg["reference_audio"])
-    reference_text = args.reference_text or eval_cfg["reference_text"]
+    reference_audio = resolve_path(args.reference_audio)
+    reference_text = args.reference_text
     if args.phrase_id:
         matches = [row for row in load_phrases(eval_cfg["phrases"]) if row["id"] == args.phrase_id]
         if not matches:

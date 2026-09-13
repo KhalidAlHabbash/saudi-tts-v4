@@ -1,0 +1,15 @@
+{
+  "artifact": "model.safetensors",
+  "artifact_sha256": "0f89df26517617ae935f8267452f2f196467cb39b80df0af93d13be5ead3d431",
+  "artifact_size_bytes": 650704952,
+  "base_model": "silma-ai/silma-tts",
+  "base_model_revision": "ac81834c5ce305504fe4c7602187042fdd6913db",
+  "f5_tts_version": "1.1.7",
+  "format_version": 1,
+  "parameter_count": 162666884,
+  "sample_rate": 24000,
+  "source_checkpoint_sha256": "8acd277aaf007f272c888477d8be2909a4211ef8cd34a7bef8fff7cd3e07d89e",
+  "tensor_count": 308,
+  "training_update": 104276,
+  "weights": "ema"
+}
